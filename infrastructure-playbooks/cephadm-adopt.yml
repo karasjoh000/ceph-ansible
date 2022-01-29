@@ -147,10 +147,17 @@
 
     - name: configure repository for installing cephadm
       when: containerized_deployment | bool
-      vars:
-        ceph_origin: repository
-        ceph_repository: community
       block:
+        - name: set_fact ceph_origin
+          set_fact:
+            ceph_origin: repository
+          when: ceph_origin == 'dummy'
+
+        - name: set_fact ceph_repository
+          set_fact:
+            ceph_repository: community
+          when: ceph_repository == 'dummy'
+
         - name: validate repository variables
           import_role:
             name: ceph-validate
@@ -184,7 +191,7 @@
 
     - name: set_fact ceph_cmd
       set_fact:
-        ceph_cmd: "{{ container_binary + ' run --rm --net=host -v /etc/ceph:/etc/ceph:z -v /var/lib/ceph:/var/lib/ceph:z -v /var/run/ceph:/var/run/ceph:z --entrypoint=ceph ' + ceph_docker_registry + '/' + ceph_docker_image + ':' + ceph_docker_image_tag if containerized_deployment | bool else 'ceph' }} --cluster {{ cluster }}"
+        ceph_cmd: "{{ container_binary + ' run --rm --net=host -v /etc/ceph:/etc/ceph:z -v /var/lib/ceph:/var/lib/ceph:ro -v /var/run/ceph:/var/run/ceph:z --entrypoint=ceph ' + ceph_docker_registry + '/' + ceph_docker_image + ':' + ceph_docker_image_tag if containerized_deployment | bool else 'ceph' }} --cluster {{ cluster }}"
 
     - name: get current fsid
       command: "{{ ceph_cmd }} fsid"
@@ -1093,7 +1100,7 @@
       when: bucket_list.skipped is undefined
 
     - name: create rgw export
-      command: "{{ cephadm_cmd }} shell --fsid {{ fsid }} -- ceph --cluster {{ cluster }} nfs export create rgw {{ item }} {{ ansible_facts['hostname'] }} {{ ceph_nfs_rgw_pseudo_path }} --squash {{ ceph_nfs_rgw_squash }}"
+      command: "{{ cephadm_cmd }} shell --fsid {{ fsid }} -- ceph --cluster {{ cluster }} nfs export create rgw --cluster-id {{ ansible_facts['hostname'] }} --bucket {{ item.split('/')[-1] }} --pseudo-path {{ ceph_nfs_rgw_pseudo_path }} --squash {{ ceph_nfs_rgw_squash }}"
       changed_when: false
       delegate_to: "{{ groups[mon_group_name][0] }}"
       environment:
@@ -1211,6 +1218,14 @@
       stat:
         path: "/etc/ceph/{{ cluster }}.conf"
       register: ceph_config
+
+    - name: ensure /etc/ceph is present
+      file:
+        path: /etc/ceph
+        state: directory
+        owner: "{{ ceph_uid | int if containerized_deployment | bool else 'ceph' }}"
+        group: "{{ ceph_uid | int if containerized_deployment | bool else 'ceph' }}"
+        mode: "{{ ceph_directories_mode }}"
 
     - name: write a ceph.conf with minimal config
       copy:
