@@ -3,12 +3,11 @@
 [Unit]
 Description=grafana-server
 {% if container_binary == 'docker' %}
-After=docker.service network-online.target local-fs.target time-sync.target
+After=docker.service
 Requires=docker.service
 {% else %}
-After=network-online.target local-fs.target time-sync.target
+After=network.target
 {% endif %}
-Wants=network-online.target local-fs.target time-sync.target
 
 [Service]
 EnvironmentFile=-/etc/environment
@@ -23,7 +22,6 @@ ExecStart=/usr/bin/{{ container_binary }} run --rm --name=grafana-server \
 {% if container_binary == 'podman' %}
   -d --log-driver journald --conmon-pidfile /%t/%n-pid --cidfile /%t/%n-cid \
 {% endif %}
-  --pids-limit={{ 0 if container_binary == 'podman' else -1 }} \
   -v /etc/grafana:/etc/grafana:Z \
   -v /var/lib/grafana:/var/lib/grafana:Z \
   --net=host \
@@ -32,6 +30,15 @@ ExecStart=/usr/bin/{{ container_binary }} run --rm --name=grafana-server \
   --memory={{ grafana_container_memory }}GB \
   --memory-swap={{ grafana_container_memory * 2 }}GB \
   -e GF_INSTALL_PLUGINS={{ grafana_plugins|join(',') }} \
+{% if ceph_docker_http_proxy is defined %}
+  -e http_proxy={{ ceph_docker_http_proxy }} \
+{% endif %}
+{% if ceph_docker_https_proxy is defined %}
+  -e https_proxy={{ ceph_docker_https_proxy }} \
+{% endif %}
+{% if ceph_docker_no_proxy is defined %}
+  -e no_proxy={{ ceph_docker_no_proxy }} \
+{% endif %}
   {{ grafana_container_image }}
 {% if container_binary == 'podman' %}
 ExecStop=-/usr/bin/sh -c "/usr/bin/{{ container_binary }} rm -f `cat /%t/%n-cid`"
